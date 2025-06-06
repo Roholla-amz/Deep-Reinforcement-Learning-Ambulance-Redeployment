@@ -3,20 +3,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
-
 from agent import ReinforceAgent
 from environment import Environment
 
-env = Environment(m=5, k=7, ambulance_count=35, normalize=True)
+env = Environment(m=5, k=7, calls_size=750, ambulance_count=10, normalize=False)
 num_stations = len(env.stations)
 input_dim = env.m + 1 + 1 + env.k
 agent = ReinforceAgent(input_dim=input_dim, num_stations=num_stations)
 
 reward_history = []
 state_history = []
-for episode in tqdm(range(1, 3500 + 1)):
+for episode in tqdm(range(1, 400 + 1)):
     
-    state = env.reset(episode-1)
+    state = env.reset()
     log_probs = []
     rewards = []
 
@@ -37,7 +36,7 @@ for episode in tqdm(range(1, 3500 + 1)):
     reward_history.append(sum(rewards)) 
 
 
-def moving_average(data, window_size=10):
+def moving_average(data, window_size=15):
     return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
 
 smoothed = moving_average(reward_history, window_size=10)

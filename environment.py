@@ -89,12 +89,13 @@ class Environment:
         ambulances (list): List of Ambulance objects.
         stations (list): List of Station objects.
     """
-    def __init__(self, m: int, k: int, ambulance_count=35, verbose=False, normalize=True):
+    def __init__(self, m: int, k: int, calls_size=1000, ambulance_count=35, verbose=False, normalize=True):
         self.m = m
         self.k = k
         self.reward : int = 0
         self.verbose = verbose
         self.ambulance_count = ambulance_count
+        self.call_size = calls_size
         self.normalize = normalize
         self.time : datetime = None
         self.stations : List[Station] = []
@@ -279,7 +280,7 @@ class Environment:
                     ambulance.time_of_arrival = None
             self.next_event()
     
-    def reset(self, day: int) -> State:
+    def reset(self) -> State:
         """
         Reset the environment to its initial state.
         """
@@ -289,10 +290,8 @@ class Environment:
         for i in range(self.ambulance_count):
             station = random.choice(list(self.stations))
             self.ambulances.append(Ambulance(i+1, station.location))
-        
-        start = self.first_day + timedelta(days=day)
-        end = start + timedelta(days=1)
-        self.event_queue = [TimedEvent(call.timestamp, (call.id, PayloadType.CALL)) for call in self.calls if call.timestamp >= start and call.timestamp < end]
+
+        self.event_queue = [TimedEvent(call.timestamp, (call.id, PayloadType.CALL)) for call in self.calls if call.id <= self.call_size]
         heapq.heapify(self.event_queue)
         
         if self.verbose:

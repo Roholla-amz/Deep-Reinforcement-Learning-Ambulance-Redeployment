@@ -6,9 +6,9 @@ from network import PolicyNetwork
 
 
 class ReinforceAgent:
-    def __init__(self, input_dim: int, num_stations: int, lr: float = 0.002):
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.policy = PolicyNetwork(input_dim, num_stations).to(device)
+    def __init__(self, input_dim: int, num_stations: int, lr: float = 0.005):
+        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.policy = PolicyNetwork(input_dim, num_stations)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
         self.gamma = 0.99
 
