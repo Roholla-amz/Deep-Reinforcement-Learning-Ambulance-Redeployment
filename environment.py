@@ -37,6 +37,7 @@ class Ambulance:
         self.location = location
         self.destination : Tuple[float, float] = None
         self.destination_type : LocationType = None
+        self.time_of_dispatch : datetime = None
         self.time_of_arrival : datetime = None
     
     def __str__(self):
@@ -247,6 +248,7 @@ class Environment:
                     amb.at_station = False
                     amb.destination = call.location
                     amb.destination_type = LocationType.CALL
+                    amb.time_of_dispatch = self.time
                     amb.time_of_arrival = self.time + time
                     self.add_event(TimedEvent(amb.time_of_arrival, (amb.id, PayloadType.AMBULANCE)))
             elif type == PayloadType.AMBULANCE:
@@ -254,7 +256,8 @@ class Environment:
                 if ambulance.destination_type == LocationType.CALL:
                     if self.verbose:
                         print(f"{self.time_str()} - Ambulance {ambulance.id} arrived to accident")
-                    self.reward += 1
+                    if self.time - ambulance.time_of_dispatch <= timedelta(minutes=30):
+                        self.reward += 1
                     hosp, time = self.find_nearest_hospital(ambulance.destination)
                     ambulance.location = ambulance.destination
                     ambulance.destination = hosp.location

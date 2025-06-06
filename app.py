@@ -6,14 +6,14 @@ from tqdm import tqdm
 from agent import ReinforceAgent
 from environment import Environment
 
-env = Environment(m=5, k=7, calls_size=750, ambulance_count=10, normalize=False)
+env = Environment(m=5, k=7, calls_size=4800, ambulance_count=25, normalize=True)
 num_stations = len(env.stations)
 input_dim = env.m + 1 + 1 + env.k
 agent = ReinforceAgent(input_dim=input_dim, num_stations=num_stations)
 
 reward_history = []
 state_history = []
-for episode in tqdm(range(1, 400 + 1)):
+for episode in tqdm(range(1, 150 + 1)):
     
     state = env.reset()
     log_probs = []
