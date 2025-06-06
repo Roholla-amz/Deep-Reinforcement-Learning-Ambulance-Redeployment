@@ -13,7 +13,7 @@ agent = ReinforceAgent(input_dim=input_dim, num_stations=num_stations)
 
 reward_history = []
 state_history = []
-for episode in tqdm(range(1, 150 + 1)):
+for episode in tqdm(range(1, 75 + 1)):
     
     state = env.reset()
     log_probs = []
@@ -36,7 +36,7 @@ for episode in tqdm(range(1, 150 + 1)):
     reward_history.append(sum(rewards)) 
 
 
-def moving_average(data, window_size=15):
+def moving_average(data, window_size=5):
     return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
 
 smoothed = moving_average(reward_history, window_size=10)
@@ -51,3 +51,6 @@ plt.legend()
 plt.grid(True)
 plt.tight_layout()
 plt.show()
+
+model_path = 'trained_policy.pth'
+agent.save(model_path)

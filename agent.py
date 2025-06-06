@@ -40,3 +40,21 @@ class ReinforceAgent:
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+    def save(self, path: str):
+        """
+        Saves just the policy network's state dict to disk.
+        """
+        torch.save(self.policy.state_dict(), path)
+
+    @classmethod
+    def load(cls, path: str, input_dim: int, num_stations: int):
+        """
+        Constructs a new agent, loads weights, and sets to eval mode.
+        """
+        agent = cls(input_dim=input_dim, num_stations=num_stations)
+        state_dict = torch.load(path, map_location='cpu')
+        agent.policy.load_state_dict(state_dict)
+        agent.policy.eval()
+        
+        return agent

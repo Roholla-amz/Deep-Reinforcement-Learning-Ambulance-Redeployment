@@ -283,7 +283,7 @@ class Environment:
                     ambulance.time_of_arrival = None
             self.next_event()
     
-    def reset(self) -> State:
+    def reset(self, call_start=1) -> State:
         """
         Reset the environment to its initial state.
         """
@@ -294,7 +294,7 @@ class Environment:
             station = random.choice(list(self.stations))
             self.ambulances.append(Ambulance(i+1, station.location))
 
-        self.event_queue = [TimedEvent(call.timestamp, (call.id, PayloadType.CALL)) for call in self.calls if call.id <= self.call_size]
+        self.event_queue = [TimedEvent(call.timestamp, (call.id, PayloadType.CALL)) for call in self.calls if call_start <= call.id < call_start+self.call_size]
         heapq.heapify(self.event_queue)
         
         if self.verbose:
