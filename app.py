@@ -13,7 +13,7 @@ agent = ReinforceAgent(input_dim=input_dim, num_stations=num_stations)
 
 reward_history = []
 state_history = []
-for episode in tqdm(range(1, 75 + 1)):
+for episode in tqdm(range(1, 50 + 1)):
     
     state = env.reset()
     log_probs = []
@@ -52,5 +52,5 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-model_path = 'trained_policy.pth'
+model_path = 'trained_policy2.pth'
 agent.save(model_path)

@@ -53,7 +53,7 @@ class ReinforceAgent:
         Constructs a new agent, loads weights, and sets to eval mode.
         """
         agent = cls(input_dim=input_dim, num_stations=num_stations)
-        state_dict = torch.load(path, map_location='cpu')
+        state_dict = torch.load(path)
         agent.policy.load_state_dict(state_dict)
         agent.policy.eval()
         
