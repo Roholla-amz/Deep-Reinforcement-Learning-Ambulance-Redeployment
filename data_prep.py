@@ -2,6 +2,29 @@ import pandas as pd
 from util import *
 from tqdm import tqdm
 
+def assign_priorities_to_calls():
+    calls_df = pd.read_csv("./data/911_calls_no_outliers.csv")
+
+    calls_df['title'] = calls_df['title'].str.replace("EMS:", "").str.strip().str.upper()
+    
+    priority_map = {
+        "CARDIAC EMERGENCY": 2,
+        "CVA/STROKE": 2,
+        "RESPIRATORY EMERGENCY": 2,
+        "HEMORRHAGING": 2,
+        "SEIZURES": 1,
+        "DIABETIC EMERGENCY": 1,
+        "SYNCOPAL EPISODE": 1,
+        "HEAD INJURY": 1,
+        "ABDOMINAL PAINS": 0,
+        "BACK PAINS/INJURY": 0,
+        "NAUSEA/VOMITING": 0
+    }
+    
+    calls_df['priority'] = calls_df['title'].map(priority_map).fillna(0).astype(int)
+    
+    calls_df.to_csv("./data/911_calls_with_priority.csv", index=False)
+
 
 def assign_the_nearest_station_to_a_call():
     calls_df = pd.read_csv("./data/911_calls_no_outliers.csv")
@@ -31,22 +54,24 @@ def assign_the_nearest_station_to_a_call():
     calls_df.to_csv("./data/911_calls_with_station.csv", index=False)
 
 def get_station_call_counts_per_hour():
-    df = pd.read_csv("./data/911_calls_with_station.csv")
+    df = pd.read_csv("./data/911_calls_with_priority.csv")
 
     df['timeStamp'] = pd.to_datetime(df['timeStamp'])
     df['date'] = df['timeStamp'].dt.date
     df['hour'] = df['timeStamp'].dt.hour
 
-    group_keys = list(df.groupby(['assigned_station_id', 'date', 'hour']).groups.keys())
+    group_keys = list(df.groupby(['assigned_station_id', 'priority', 'date', 'hour']).groups.keys())
 
     result = []
 
-    for (station_id, date, hour) in tqdm(group_keys, desc="Counting calls per station per hour per day"):
+    for (station_id, priority, date, hour) in tqdm(group_keys, desc="Counting calls per station per priority per hour per day"):
         count = df[(df['assigned_station_id'] == station_id) &
-                (df['date'] == date) &
-                (df['hour'] == hour)].shape[0]
+                   (df['priority'] == priority) &
+                   (df['date'] == date) &
+                   (df['hour'] == hour)].shape[0]
         result.append({
             'station_id': station_id,
+            'priority': priority,
             'date': date,
             'hour': hour,
             'call_count': count
@@ -54,7 +79,7 @@ def get_station_call_counts_per_hour():
 
     call_counts = pd.DataFrame(result)
 
-    call_counts.to_csv("./data/station_call_counts_per_hour.csv", index=False)
+    call_counts.to_csv("./data/station_call_counts_per_priority_per_hour.csv", index=False)
 
 if __name__ == '__main__':
     get_station_call_counts_per_hour()

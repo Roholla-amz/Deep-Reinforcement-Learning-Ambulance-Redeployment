@@ -6,9 +6,9 @@ from tqdm import tqdm
 from agent import ReinforceAgent
 from environment import Environment
 
-env = Environment(m=5, k=7, calls_size=4800, ambulance_count=25, normalize=True)
+env = Environment(m=5, k=7, calls_size=4800, ambulance_count=25, normalize=False)
 num_stations = len(env.stations)
-input_dim = env.m + 1 + 1 + env.k
+input_dim = 3 * env.m + 1 + 1 + env.k
 agent = ReinforceAgent(input_dim=input_dim, num_stations=num_stations)
 
 reward_history = []
@@ -52,5 +52,5 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-model_path = 'trained_policy2.pth'
+model_path = 'trained_policy_with_pr.pth'
 agent.save(model_path)

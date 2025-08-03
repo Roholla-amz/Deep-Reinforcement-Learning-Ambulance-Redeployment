@@ -39,6 +39,7 @@ class Ambulance:
         self.destination_type : LocationType = None
         self.time_of_dispatch : datetime = None
         self.time_of_arrival : datetime = None
+        self.patient_priority : int = 0
     
     def __str__(self):
         return f'({self.id}, {self.location}, {self.at_station})'
@@ -59,16 +60,21 @@ class Hospital:
         return str(self)
 
 class Call:
-    def __init__(self, id: int, timestamp: datetime, lat: float = None, lng: float = None):
+    def __init__(self, id: int, timestamp: datetime, lat: float = None, lng: float = None, priority: int = 0):
         self.id = id
         self.location : Tuple[float, float] = (lat, lng)
         self.timestamp = timestamp
+        self.priority = priority
 
     def __str__(self):
         return f'({self.id}, {self.timestamp})'
     
     def __repr__(self):
         return str(self)
+    
+class Stats:
+    def __init__(self):
+        self.pickup_times: List[float] = []
 
 class PayloadType(Enum):
     CALL = 1
@@ -93,7 +99,8 @@ class Environment:
     def __init__(self, m: int, k: int, calls_size=1000, ambulance_count=35, verbose=False, normalize=True):
         self.m = m
         self.k = k
-        self.reward : int = 0
+        self.reward : float = 0
+        self.reward_per_priority : List[int] = [0, 0, 0]
         self.verbose = verbose
         self.ambulance_count = ambulance_count
         self.call_size = calls_size
@@ -102,10 +109,11 @@ class Environment:
         self.stations : List[Station] = []
         self.hospitals : List[Hospital] = []
         self.calls : List[Call] = []
-        self.call_counts : Dict[Tuple[int, date, int], int] = {}
+        self.call_counts : Dict[Tuple[int, int, date, int], int] = {}
         self.ambulances: List[Ambulance] = []
         self.free_ambulance : int = None
         self.event_queue : List[TimedEvent] = []
+        self.stats: Stats = Stats()
         self.load_data()
     
     def load_data(self):
@@ -114,8 +122,8 @@ class Environment:
         
         df_hospitals = pd.read_csv('./data/hospitals.csv')
         df_stations = pd.read_csv('./data/stations.csv')
-        df_calls = pd.read_csv('./data/911_calls_no_outliers.csv')
-        df_call_counts = pd.read_csv('./data/station_call_counts_per_hour.csv')
+        df_calls = pd.read_csv('./data/911_calls_with_priority.csv')
+        df_call_counts = pd.read_csv('./data/station_call_counts_per_priority_per_hour.csv')
 
         for h in df_hospitals.to_dict(orient='records'):
             self.hospitals.append(Hospital(h['id'], h['hospital_name'], h['lat'], h['lng']))
@@ -125,13 +133,13 @@ class Environment:
 
         df_calls['timeStamp'] = pd.to_datetime(df_calls['timeStamp'])
         for c in df_calls.to_dict(orient='records'):
-            self.calls.append(Call(c['id'], c['timeStamp'], c['lat'], c['lng']))
+            self.calls.append(Call(c['id'], c['timeStamp'], c['lat'], c['lng'], c['priority']))
         first_call_timestamp = min(self.calls, key=lambda x: x.timestamp).timestamp
         self.first_day = datetime(first_call_timestamp.year, first_call_timestamp.month, first_call_timestamp.day)
 
         df_call_counts['date'] = pd.to_datetime(df_call_counts['date']).dt.date
         for cc in df_call_counts.to_dict(orient='records'):
-            self.call_counts[(cc['station_id'], cc['date'], cc['hour'])] = cc['call_count']
+            self.call_counts[(cc['station_id'], cc['priority'], cc['date'], cc['hour'])] = cc['call_count']
         
         data = np.load("feature_norm_stats.npz")
         self.mean_x = data['mu']
@@ -186,11 +194,13 @@ class Environment:
             # lambda_i_m
             for m in range(self.m):
                 hour = (self.time + timedelta(hours=m+1)).hour
-                sum = 0.0
-                for day in range(10):
-                    date = (self.time - timedelta(days=day+1)).date()
-                    sum += self.call_counts[(i+1, date, hour)] if (i+1, date, hour) in self.call_counts else 0
-                x_i.append(sum / 10)
+                for pr in range(3):
+                    sum = 0.0
+                    for day in range(10):
+                        date = (self.time - timedelta(days=day+1)).date()
+                        key = (i+1, pr, date, hour)
+                        sum += self.call_counts[key] if key in self.call_counts else 0
+                    x_i.append(sum / 10)
         
             # n_i
             n_i = 0
@@ -250,14 +260,20 @@ class Environment:
                     amb.destination_type = LocationType.CALL
                     amb.time_of_dispatch = self.time
                     amb.time_of_arrival = self.time + time
+                    amb.patient_priority = call.priority
                     self.add_event(TimedEvent(amb.time_of_arrival, (amb.id, PayloadType.AMBULANCE)))
             elif type == PayloadType.AMBULANCE:
                 ambulance = self.ambulances[id - 1]
                 if ambulance.destination_type == LocationType.CALL:
                     if self.verbose:
                         print(f"{self.time_str()} - Ambulance {ambulance.id} arrived to accident")
-                    if self.time - ambulance.time_of_dispatch <= timedelta(minutes=30):
-                        self.reward += 1
+                        
+                    pickup_time = (self.time - ambulance.time_of_dispatch)
+                    self.stats.pickup_times.append(pickup_time.total_seconds() / 60)
+                    
+                    if pickup_time <= timedelta(minutes=30):
+                        self.reward += 1 + ambulance.patient_priority/3
+                        self.reward_per_priority[ambulance.patient_priority] += 1
                     hosp, time = self.find_nearest_hospital(ambulance.destination)
                     ambulance.location = ambulance.destination
                     ambulance.destination = hosp.location
@@ -271,6 +287,7 @@ class Environment:
                     ambulance.destination = None
                     ambulance.destination_type = None
                     ambulance.time_of_arrival = None
+                    ambulance.patient_priority = 0
                     self.free_ambulance = ambulance.id
                     return
                 elif ambulance.destination_type == LocationType.STATION:
@@ -364,5 +381,6 @@ class Environment:
             print(f"{self.time_str()} - Ambulance {ambulance.id} dispatched to station {station.id}")
         
         self.reward = 0
+        self.reward_per_priority = [0, 0, 0]
         self.run_until_decision_needed()
-        return self.get_state(), self.reward, len(self.event_queue) == 0
+        return self.get_state(), self.reward, len(self.event_queue) == 0, self.stats

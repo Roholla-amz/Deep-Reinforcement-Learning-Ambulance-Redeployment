@@ -20,6 +20,14 @@ class ReinforceAgent:
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
         return action.item(), dist.log_prob(action)
+    
+    def select_best_action(self, state: torch.Tensor) -> Tuple[int, torch.Tensor]:
+        """
+        Given a state, select the best action
+        """
+        probs = self.policy.forward(state)
+        highest_prob, action = torch.max(probs, dim=0)
+        return action.item()
 
     def update(self, log_probs: List[torch.Tensor], rewards: List[float]):
         """
