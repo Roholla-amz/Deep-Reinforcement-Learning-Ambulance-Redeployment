@@ -75,6 +75,10 @@ class Call:
 class Stats:
     def __init__(self):
         self.pickup_times: List[float] = []
+    def AvePT(self) -> float:
+        return sum(self.pickup_times) / len(self.pickup_times)
+    def RelaPT(self) -> float:
+        return sum([1 if pt <= 30 else 0 for pt in self.pickup_times]) / len(self.pickup_times)
 
 class PayloadType(Enum):
     CALL = 1
@@ -269,11 +273,15 @@ class Environment:
                         print(f"{self.time_str()} - Ambulance {ambulance.id} arrived to accident")
                         
                     pickup_time = (self.time - ambulance.time_of_dispatch)
+                    pr = ambulance.patient_priority
+                    
                     self.stats.pickup_times.append(pickup_time.total_seconds() / 60)
                     
-                    if pickup_time <= timedelta(minutes=30):
-                        self.reward += 1 + ambulance.patient_priority/3
-                        self.reward_per_priority[ambulance.patient_priority] += 1
+                    if pr == 0 and pickup_time <= timedelta(minutes=30) or \
+                       pr == 1 and pickup_time <= timedelta(minutes=25) or \
+                       pr == 2 and pickup_time <= timedelta(minutes=20):
+                        self.reward += 1
+                        self.reward_per_priority[pr] += 1
                     hosp, time = self.find_nearest_hospital(ambulance.destination)
                     ambulance.location = ambulance.destination
                     ambulance.destination = hosp.location
@@ -313,6 +321,8 @@ class Environment:
 
         self.event_queue = [TimedEvent(call.timestamp, (call.id, PayloadType.CALL)) for call in self.calls if call_start <= call.id < call_start+self.call_size]
         heapq.heapify(self.event_queue)
+        
+        self.stats = Stats()
         
         if self.verbose:
             print("environment reset")
@@ -383,4 +393,4 @@ class Environment:
         self.reward = 0
         self.reward_per_priority = [0, 0, 0]
         self.run_until_decision_needed()
-        return self.get_state(), self.reward, len(self.event_queue) == 0, self.stats
+        return self.get_state(), self.reward, len(self.event_queue) == 0

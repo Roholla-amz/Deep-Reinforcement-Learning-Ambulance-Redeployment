@@ -52,5 +52,5 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-model_path = 'trained_policy_with_pr.pth'
+model_path = 'trained_policy_with_pr3.pth'
 agent.save(model_path)

@@ -1,7 +1,7 @@
 import torch
 import torch.optim as optim
 from typing import List, Tuple
-
+import random
 from network import PolicyNetwork
 
 
@@ -66,3 +66,49 @@ class ReinforceAgent:
         agent.policy.eval()
         
         return agent
+    
+class RandomAgent:
+    def __init__(self, num_stations: int):
+        self.num_stations = num_stations
+
+    def select_action(self, state: torch.Tensor) -> Tuple[int, torch.Tensor]:
+        """
+        Select a random action from the available stations.
+        """
+        action = random.randint(0, self.num_stations - 1)
+        return action
+
+class NSAgent:
+    def __init__(self, m: int):
+        self.m = m
+
+    def select_action(self, state: torch.Tensor) -> Tuple[int, torch.Tensor]:
+        """
+        Select the nearest station based on the state.
+        """
+        action = 0
+        tt = int(1e9)
+        for i, s in enumerate(state):
+            if s[3*self.m + 1] < tt:
+                tt = s[self.m + 1]
+                action = i
+        return action
+
+class LSAgent:
+    def __init__(self, m: int):
+        self.m = m
+
+    def select_action(self, state: torch.Tensor) -> Tuple[int, torch.Tensor]:
+        """
+        Select the station with the least number of ambulances assigned.
+        """
+        action = 0
+        min_ambulances = int(1e9)
+        for i, s in enumerate(state):
+            if s[3*self.m] < min_ambulances:
+                min_ambulances = s[self.m + 1]
+                action = i
+        return action
+
+
+
