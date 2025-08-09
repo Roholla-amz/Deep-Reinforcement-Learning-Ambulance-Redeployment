@@ -7,6 +7,9 @@ import numpy as np
 from enum import Enum
 from dataclasses import dataclass, field
 import heapq
+import osmnx as ox
+import networkx as nx
+from shapely.geometry import Polygon
 
 class LocationType(Enum):
     STATION = 1
@@ -74,11 +77,20 @@ class Call:
     
 class Stats:
     def __init__(self):
-        self.pickup_times: List[float] = []
+        self.pickup_times: List[Tuple[int, float]] = []
     def AvePT(self) -> float:
-        return sum(self.pickup_times) / len(self.pickup_times)
+        arr0 = np.array([pt for (pr, pt) in self.pickup_times if pr == 0])
+        arr1 = np.array([pt for (pr, pt) in self.pickup_times if pr == 1])
+        arr2 = np.array([pt for (pr, pt) in self.pickup_times if pr == 2])
+        return sum(arr0) / len(arr0), sum(arr1) / len(arr1), sum(arr2) / len(arr2)
     def RelaPT(self) -> float:
-        return sum([1 if pt <= 30 else 0 for pt in self.pickup_times]) / len(self.pickup_times)
+        return sum([1 if pt <= 25 - 5*pr else 0 for (pr, pt) in self.pickup_times]) / len(self.pickup_times)
+    def P90(self):
+        arr0 = np.array([pt for (pr, pt) in self.pickup_times if pr == 0])
+        arr1 = np.array([pt for (pr, pt) in self.pickup_times if pr == 1])
+        arr2 = np.array([pt for (pr, pt) in self.pickup_times if pr == 2])
+
+        return np.percentile(arr0, 90), np.percentile(arr1, 90), np.percentile(arr2, 90)
 
 class PayloadType(Enum):
     CALL = 1
@@ -118,14 +130,15 @@ class Environment:
         self.free_ambulance : int = None
         self.event_queue : List[TimedEvent] = []
         self.stats: Stats = Stats()
+        self.road_graph: nx.MultiDiGraph = None
         self.load_data()
     
     def load_data(self):
         if self.verbose:
             print("Loading data...")
         
-        df_hospitals = pd.read_csv('./data/hospitals.csv')
-        df_stations = pd.read_csv('./data/stations.csv')
+        df_hospitals = pd.read_csv('./data/hospitals_from_map.csv')
+        df_stations = pd.read_csv('./data/stations_from_map.csv')
         df_calls = pd.read_csv('./data/911_calls_with_priority.csv')
         df_call_counts = pd.read_csv('./data/station_call_counts_per_priority_per_hour.csv')
 
@@ -148,6 +161,7 @@ class Environment:
         data = np.load("feature_norm_stats.npz")
         self.mean_x = data['mu']
         self.std_x = data['sigma']
+
         
         if self.verbose:
             print("data loaded")
@@ -254,6 +268,8 @@ class Environment:
                 call = self.calls[id - 1]
                 amb, time = self.find_nearest_ambulance(call.location)
                 if amb is None:
+                    self.reward -= 2
+                    self.stats.pickup_times.append((call.priority, 1000))
                     if self.verbose:
                         print(f"{self.time_str()} - No available ambulance for call {call.id}")
                 else:
@@ -275,13 +291,15 @@ class Environment:
                     pickup_time = (self.time - ambulance.time_of_dispatch)
                     pr = ambulance.patient_priority
                     
-                    self.stats.pickup_times.append(pickup_time.total_seconds() / 60)
+                    self.stats.pickup_times.append((pr, pickup_time.total_seconds() / 60))
                     
-                    if pr == 0 and pickup_time <= timedelta(minutes=30) or \
-                       pr == 1 and pickup_time <= timedelta(minutes=25) or \
-                       pr == 2 and pickup_time <= timedelta(minutes=20):
-                        self.reward += 1
+                    if pr == 0 and pickup_time <= timedelta(minutes=12) or \
+                       pr == 1 and pickup_time <= timedelta(minutes=10) or \
+                       pr == 2 and pickup_time <= timedelta(minutes=8):
+                        self.reward += 1 + pr/3
                         self.reward_per_priority[pr] += 1
+                    else:
+                        self.reward -= 0.5 + pr/6
                     hosp, time = self.find_nearest_hospital(ambulance.destination)
                     ambulance.location = ambulance.destination
                     ambulance.destination = hosp.location

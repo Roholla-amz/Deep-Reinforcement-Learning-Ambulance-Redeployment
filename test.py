@@ -6,10 +6,10 @@ from tqdm import tqdm
 from agent import *
 from environment import Environment
 
-env = Environment(m=5, k=7, calls_size=4800, ambulance_count=25, normalize=False)
+env = Environment(m=5, k=7, calls_size=4800, ambulance_count=60, normalize=False)
 num_stations = len(env.stations)
 input_dim = 3 * env.m + 1 + 1 + env.k
-reinforce_agent = ReinforceAgent.load('trained_policy_with_pr.pth', input_dim=input_dim, num_stations=num_stations)
+reinforce_agent = ReinforceAgent.load('trained_policy_with_pr3.pth', input_dim=input_dim, num_stations=num_stations)
 ns_agent = NSAgent(m=env.m)
 ls_agent = LSAgent(m=env.m)
 random_agent = RandomAgent(num_stations=num_stations)
@@ -28,6 +28,7 @@ while True:
 print('reinforce agent:')
 print(' Average Pickup Time:', env.stats.AvePT())
 print(' Relative Pickup Time:', env.stats.RelaPT())
+print(' 90-th percentile Pickup Time:', env.stats.P90())
 
 
 state = env.reset(call_start=4800)
@@ -44,6 +45,7 @@ while True:
 print('NS agent:')
 print(' Average Pickup Time:', env.stats.AvePT())
 print(' Relative Pickup Time:', env.stats.RelaPT())
+print(' 90-th percentile Pickup Time:', env.stats.P90())
 
 
 state = env.reset(call_start=4800)
@@ -60,6 +62,7 @@ while True:
 print('LS agent:')
 print(' Average Pickup Time:', env.stats.AvePT())
 print(' Relative Pickup Time:', env.stats.RelaPT())
+print(' 90-th percentile Pickup Time:', env.stats.P90())
 
 
 state = env.reset(call_start=4800)
@@ -76,3 +79,4 @@ while True:
 print('random agent:')
 print(' Average Pickup Time:', env.stats.AvePT())
 print(' Relative Pickup Time:', env.stats.RelaPT())
+print(' 90-th percentile Pickup Time:', env.stats.P90())

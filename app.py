@@ -6,12 +6,14 @@ from tqdm import tqdm
 from agent import ReinforceAgent
 from environment import Environment
 
-env = Environment(m=5, k=7, calls_size=4800, ambulance_count=25, normalize=False)
+env = Environment(m=5, k=7, calls_size=3000, ambulance_count=25, normalize=False)
 num_stations = len(env.stations)
 input_dim = 3 * env.m + 1 + 1 + env.k
 agent = ReinforceAgent(input_dim=input_dim, num_stations=num_stations)
 
 reward_history = []
+relaPT_history = []  # Store AvePT for each episode
+
 state_history = []
 for episode in tqdm(range(1, 50 + 1)):
     
@@ -34,12 +36,14 @@ for episode in tqdm(range(1, 50 + 1)):
     agent.update(log_probs, rewards)
     
     reward_history.append(sum(rewards)) 
-
+    relaPT = env.stats.RelaPT()  # Tuple of (AvePT0, AvePT1, AvePT2)
+    print(relaPT)
+    relaPT_history.append(relaPT)
 
 def moving_average(data, window_size=5):
     return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
 
-smoothed = moving_average(reward_history, window_size=10)
+smoothed = moving_average(reward_history, window_size=5)
 
 plt.figure(figsize=(10, 5))
 plt.plot(reward_history, alpha=0.3, label='Raw Reward')
@@ -52,5 +56,16 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-model_path = 'trained_policy_with_pr3.pth'
+# --- Plot AvePT for each priority ---
+plt.figure(figsize=(10, 5))
+plt.plot(relaPT_history, label='RelaPT')
+plt.xlabel('Episode')
+plt.ylabel('RelaPT (percent)')
+plt.title('RelaPT per Episode')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+model_path = 'trained_policy_with_pr4.pth'
 agent.save(model_path)

@@ -1,8 +1,10 @@
 from typing import List, Tuple
 from haversine import haversine
 from datetime import datetime, timedelta
+import osmnx as ox
+import networkx as nx
 
-def travel_time(loc1: Tuple[float, float], loc2: Tuple[float, float], speed_kmh: float = 40) -> timedelta:
+def travel_time(loc1: Tuple[float, float], loc2: Tuple[float, float], speed_kmh=40) -> timedelta:
     """
     Calculate the travel time between two locations.
     Args:
@@ -17,3 +19,19 @@ def travel_time(loc1: Tuple[float, float], loc2: Tuple[float, float], speed_kmh:
 
 def distance(loc1: Tuple[float, float], loc2: Tuple[float, float]):
     return haversine(loc1, loc2)
+
+def travel_time_by_road(start: Tuple[float, float], end: Tuple[float, float], graph: nx.MultiDiGraph) -> timedelta:
+    orig = ox.distance.nearest_nodes(graph, Y=start[0], X=start[1])  
+    dest = ox.distance.nearest_nodes(graph, Y=end[0], X=end[1])
+
+    route = nx.shortest_path(graph, orig, dest, weight='travel_time')
+
+    edges = zip(route[:-1], route[1:])
+    travel_time = 0
+    for u, v in edges:
+        data = graph.get_edge_data(u, v)
+        # In case of multiple edges between nodes (e.g. different directions)
+        edge_data = data[0] if isinstance(data, dict) else data
+        travel_time += edge_data.get("travel_time", 0)
+
+    return timedelta(minutes = travel_time / 60)

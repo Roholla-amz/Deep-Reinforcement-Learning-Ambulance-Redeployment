@@ -6,7 +6,7 @@ from network import PolicyNetwork
 
 
 class ReinforceAgent:
-    def __init__(self, input_dim: int, num_stations: int, lr: float = 0.005):
+    def __init__(self, input_dim: int, num_stations: int, lr: float = 0.01):
         # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.policy = PolicyNetwork(input_dim, num_stations)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
@@ -86,13 +86,15 @@ class NSAgent:
         """
         Select the nearest station based on the state.
         """
-        action = 0
+        action = [0]
         tt = int(1e9)
         for i, s in enumerate(state):
             if s[3*self.m + 1] < tt:
                 tt = s[self.m + 1]
-                action = i
-        return action
+                action = [i]
+            elif s[3*self.m + 1] == tt:
+                action.append(i)
+        return random.choice(action)
 
 class LSAgent:
     def __init__(self, m: int):
@@ -102,13 +104,15 @@ class LSAgent:
         """
         Select the station with the least number of ambulances assigned.
         """
-        action = 0
+        action = [0]
         min_ambulances = int(1e9)
         for i, s in enumerate(state):
             if s[3*self.m] < min_ambulances:
                 min_ambulances = s[self.m + 1]
-                action = i
-        return action
+                action = [i]
+            elif s[3*self.m] == min_ambulances:
+                action.append(i)
+        return random.choice(action)
 
 
 

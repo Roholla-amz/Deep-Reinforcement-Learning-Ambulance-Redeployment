@@ -28,7 +28,7 @@ def assign_priorities_to_calls():
 
 def assign_the_nearest_station_to_a_call():
     calls_df = pd.read_csv("./data/911_calls_no_outliers.csv")
-    stations_df = pd.read_csv("./data/stations.csv")
+    stations_df = pd.read_csv("./data/stations_from_map.csv")
 
     station_locations = stations_df[['id', 'lat', 'lng']].copy()
     station_locations['coord'] = list(zip(station_locations['lat'], station_locations['lng']))
