@@ -3,15 +3,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class DeepScoreNetwork(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int = 20):
+    def __init__(self, input_dim: int):
         super().__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.output = nn.Linear(hidden_dim, 1)
+        self.fc1 = nn.Linear(input_dim, 32)
+        self.fc2 = nn.Linear(32, 64)
+        self.fc3 = nn.Linear(64, 32)
+        self.output = nn.Linear(32, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = torch.tanh(self.fc1(x))
         x = torch.tanh(self.fc2(x))
+        x = torch.tanh(self.fc3(x))
         return self.output(x)  # scalar score
 
 class PolicyNetwork(nn.Module):

@@ -6,11 +6,12 @@ from network import PolicyNetwork
 
 
 class ReinforceAgent:
-    def __init__(self, input_dim: int, num_stations: int, lr: float = 0.01):
+    def __init__(self, input_dim: int, num_stations: int, lr: float = 0.005):
         # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.policy = PolicyNetwork(input_dim, num_stations)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
         self.gamma = 0.99
+        self.entropy_coef = 0.001
 
     def select_action(self, state: torch.Tensor) -> Tuple[int, torch.Tensor]:
         """
@@ -19,7 +20,7 @@ class ReinforceAgent:
         probs = self.policy(state)
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
-        return action.item(), dist.log_prob(action)
+        return action.item(), dist.log_prob(action), dist.entropy()
     
     def select_best_action(self, state: torch.Tensor) -> Tuple[int, torch.Tensor]:
         """
@@ -29,7 +30,7 @@ class ReinforceAgent:
         highest_prob, action = torch.max(probs, dim=0)
         return action.item()
 
-    def update(self, log_probs: List[torch.Tensor], rewards: List[float]):
+    def update(self, log_probs: List[torch.Tensor], rewards: List[float], entropies: List[torch.Tensor]):
         """
         Update policy using REINFORCE with baseline.
         """
@@ -40,10 +41,16 @@ class ReinforceAgent:
             R = r + self.gamma * R
             returns.insert(0, R)
         returns = torch.tensor(returns, dtype=torch.float32)
-
-        # Use average return as baseline
-        baseline = returns.mean()
-        loss = -torch.sum(torch.stack(log_probs) * (returns - baseline))
+        
+        adv = returns - returns.mean()
+        adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+        
+        logp = torch.stack(log_probs)
+        ent   = torch.stack(entropies)
+        entropy_bonus = ent.sum() * self.entropy_coef
+        
+        actor_loss = - (logp * adv).sum()
+        loss = actor_loss - entropy_bonus
 
         self.optimizer.zero_grad()
         loss.backward()

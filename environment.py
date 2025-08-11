@@ -7,9 +7,9 @@ import numpy as np
 from enum import Enum
 from dataclasses import dataclass, field
 import heapq
-import osmnx as ox
-import networkx as nx
-from shapely.geometry import Polygon
+# import osmnx as ox
+# import networkx as nx
+# from shapely.geometry import Polygon
 
 class LocationType(Enum):
     STATION = 1
@@ -130,7 +130,7 @@ class Environment:
         self.free_ambulance : int = None
         self.event_queue : List[TimedEvent] = []
         self.stats: Stats = Stats()
-        self.road_graph: nx.MultiDiGraph = None
+        # self.road_graph: nx.MultiDiGraph = None
         self.load_data()
     
     def load_data(self):
@@ -229,7 +229,7 @@ class Environment:
         
             # tt_i
             free_amb = self.ambulances[self.free_ambulance - 1]
-            tt_i = travel_time(free_amb.location, self.stations[i].location)
+            tt_i = travel_time_from_dict(free_amb.location, self.stations[i].location)
             x_i.append(tt_i.total_seconds() / 60 / 60)
         
             # tt_i_j
@@ -237,7 +237,7 @@ class Environment:
             for j in range(self.ambulance_count):
                 amb = self.ambulances[j]
                 if amb.destination_type == LocationType.HOSPITAL:
-                    tt = travel_time(amb.destination, self.stations[i].location)
+                    tt = travel_time_from_dict(amb.destination, self.stations[i].location)
                     time = (amb.time_of_arrival - self.time) + tt
                     tt_i_j.append(time.total_seconds() / 60 / 60)
             tt_i_j = sorted(tt_i_j)
@@ -268,7 +268,7 @@ class Environment:
                 call = self.calls[id - 1]
                 amb, time = self.find_nearest_ambulance(call.location)
                 if amb is None:
-                    self.reward -= 2
+                    self.reward -= 1 + call.priority/3
                     self.stats.pickup_times.append((call.priority, 1000))
                     if self.verbose:
                         print(f"{self.time_str()} - No available ambulance for call {call.id}")
@@ -293,13 +293,13 @@ class Environment:
                     
                     self.stats.pickup_times.append((pr, pickup_time.total_seconds() / 60))
                     
-                    if pr == 0 and pickup_time <= timedelta(minutes=12) or \
-                       pr == 1 and pickup_time <= timedelta(minutes=10) or \
-                       pr == 2 and pickup_time <= timedelta(minutes=8):
-                        self.reward += 1 + pr/3
+                    if pr == 0 and pickup_time <= timedelta(minutes=18) or \
+                       pr == 1 and pickup_time <= timedelta(minutes=15) or \
+                       pr == 2 and pickup_time <= timedelta(minutes=12):
+                        self.reward += 1 + pr
                         self.reward_per_priority[pr] += 1
                     else:
-                        self.reward -= 0.5 + pr/6
+                        self.reward -= 0.5 + pr/3
                     hosp, time = self.find_nearest_hospital(ambulance.destination)
                     ambulance.location = ambulance.destination
                     ambulance.destination = hosp.location
@@ -396,11 +396,11 @@ class Environment:
             Tuple: The next state, reward, and done flag.
         """
         self.next_event()
-        station = self.stations[action - 1]
+        station = self.stations[action]
         ambulance = self.ambulances[self.free_ambulance - 1]
         
         
-        time = travel_time(ambulance.location, station.location)
+        time = travel_time_from_dict(ambulance.location, station.location)
         ambulance.destination = station.location
         ambulance.destination_type = LocationType.STATION
         self.free_ambulance = None

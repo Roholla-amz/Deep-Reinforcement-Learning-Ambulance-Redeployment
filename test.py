@@ -9,7 +9,7 @@ from environment import Environment
 env = Environment(m=5, k=7, calls_size=4800, ambulance_count=60, normalize=False)
 num_stations = len(env.stations)
 input_dim = 3 * env.m + 1 + 1 + env.k
-reinforce_agent = ReinforceAgent.load('trained_policy_with_pr3.pth', input_dim=input_dim, num_stations=num_stations)
+reinforce_agent = ReinforceAgent.load('trained_policy_with_pr4.pth', input_dim=input_dim, num_stations=num_stations)
 ns_agent = NSAgent(m=env.m)
 ls_agent = LSAgent(m=env.m)
 random_agent = RandomAgent(num_stations=num_stations)
