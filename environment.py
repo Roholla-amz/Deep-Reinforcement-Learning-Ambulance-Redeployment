@@ -1,5 +1,5 @@
 from typing import List, Tuple, Dict
-from util import *
+from util import util
 import random
 from datetime import datetime, timedelta, date
 import pandas as pd
@@ -7,9 +7,9 @@ import numpy as np
 from enum import Enum
 from dataclasses import dataclass, field
 import heapq
-# import osmnx as ox
-# import networkx as nx
-# from shapely.geometry import Polygon
+import osmnx as ox
+import networkx as nx
+from shapely.geometry import Polygon
 
 class LocationType(Enum):
     STATION = 1
@@ -42,7 +42,7 @@ class Ambulance:
         self.destination_type : LocationType = None
         self.time_of_dispatch : datetime = None
         self.time_of_arrival : datetime = None
-        self.patient_priority : int = 0
+        self.patient_id : int = None
     
     def __str__(self):
         return f'({self.id}, {self.location}, {self.at_station})'
@@ -74,24 +74,54 @@ class Call:
     
     def __repr__(self):
         return str(self)
-    
+
+def threshold_for_pr(pr: int) -> int:
+    if pr == 0:
+        return 15
+    if pr == 1:
+        return 10
+    if pr == 2:
+        return 8
+
 class Stats:
     def __init__(self):
-        self.pickup_times: List[Tuple[int, float]] = []
-    def AvePT(self) -> float:
-        arr0 = np.array([pt for (pr, pt) in self.pickup_times if pr == 0])
-        arr1 = np.array([pt for (pr, pt) in self.pickup_times if pr == 1])
-        arr2 = np.array([pt for (pr, pt) in self.pickup_times if pr == 2])
-        return sum(arr0) / len(arr0), sum(arr1) / len(arr1), sum(arr2) / len(arr2)
-    def RelaPT(self) -> float:
-        return sum([1 if pt <= 25 - 5*pr else 0 for (pr, pt) in self.pickup_times]) / len(self.pickup_times)
-    def P90(self):
-        arr0 = np.array([pt for (pr, pt) in self.pickup_times if pr == 0])
-        arr1 = np.array([pt for (pr, pt) in self.pickup_times if pr == 1])
-        arr2 = np.array([pt for (pr, pt) in self.pickup_times if pr == 2])
+        self.pt_per_pr = [[], [], []]
+        self.pt_per_dist : List[List[Tuple[float, float]]] = [[], [], []]
+        self.pickup_times_sum = [0, 0, 0]
+        self.pickup_times_cnt = [0, 0, 0]
+        self.pickup_times_in_time = [0, 0, 0]
+    
+    def add(self, pr:int, pickup: float, dist: float = None):
+        self.pt_per_pr[pr].append(pickup)
+        if dist:
+            self.pt_per_dist[pr].append((dist, pickup))
+        self.pickup_times_sum[pr] += pickup
+        if pickup <= threshold_for_pr(pr):
+            self.pickup_times_in_time[pr] += 1
+        self.pickup_times_cnt[pr] += 1     
+    
+    def AvePT(self) -> Tuple[float, float, float]:
+        return self.pickup_times_sum[0] / self.pickup_times_cnt[0], \
+            self.pickup_times_sum[1] / self.pickup_times_cnt[1], \
+            self.pickup_times_sum[2] / self.pickup_times_cnt[2]
+            
+    def RelaPT(self) -> Tuple[float, float, float]:
+        return self.pickup_times_in_time[0]/self.pickup_times_cnt[0], \
+            self.pickup_times_in_time[1]/self.pickup_times_cnt[1], \
+            self.pickup_times_in_time[2]/self.pickup_times_cnt[2]
+            
+    def P90(self) -> Tuple[float, float, float]:
+        arr0 = np.array(self.pt_per_pr[0])
+        arr1 = np.array(self.pt_per_pr[1])
+        arr2 = np.array(self.pt_per_pr[2])
 
-        return np.percentile(arr0, 90), np.percentile(arr1, 90), np.percentile(arr2, 90)
-
+        return np.percentile(arr0, 90).item(), \
+            np.percentile(arr1, 90).item(), \
+            np.percentile(arr2, 90).item()
+            
+    def pt_per_distance(self):
+        return self.pt_per_dist
+    
 class PayloadType(Enum):
     CALL = 1
     AMBULANCE = 2
@@ -112,36 +142,39 @@ class Environment:
         ambulances (list): List of Ambulance objects.
         stations (list): List of Station objects.
     """
-    def __init__(self, m: int, k: int, calls_size=1000, ambulance_count=35, verbose=False, normalize=True):
+    def __init__(self, m: int, k: int, calls_size=1000, ambulance_count=35, verbose=False, use_map=False, noise: float=None):
         self.m = m
         self.k = k
         self.reward : float = 0
-        self.reward_per_priority : List[int] = [0, 0, 0]
         self.verbose = verbose
         self.ambulance_count = ambulance_count
         self.call_size = calls_size
-        self.normalize = normalize
         self.time : datetime = None
         self.stations : List[Station] = []
         self.hospitals : List[Hospital] = []
-        self.calls : List[Call] = []
+        self.calls : Dict[int, Call] = {}
+        self.call_ids : List[int] = []
         self.call_counts : Dict[Tuple[int, int, date, int], int] = {}
         self.ambulances: List[Ambulance] = []
         self.free_ambulance : int = None
         self.event_queue : List[TimedEvent] = []
+        self.call_queue: Tuple[List[Call], List[Call], List[Call]] = ([], [], [])
         self.stats: Stats = Stats()
-        # self.road_graph: nx.MultiDiGraph = None
+        self.use_map = use_map
+        self.hold_time = [7, 2, 0]
+        self.noise = noise
         self.load_data()
     
     def load_data(self):
-        if self.verbose:
-            print("Loading data...")
+        print("Loading environment variables...")
         
         df_hospitals = pd.read_csv('./data/hospitals_from_map.csv')
         df_stations = pd.read_csv('./data/stations_from_map.csv')
-        df_calls = pd.read_csv('./data/911_calls_with_priority.csv')
+        df_calls = pd.read_csv('./data/911_calls_filtered_by_travel_time.csv')
         df_call_counts = pd.read_csv('./data/station_call_counts_per_priority_per_hour.csv')
 
+        print("datasets loaded")
+        
         for h in df_hospitals.to_dict(orient='records'):
             self.hospitals.append(Hospital(h['id'], h['hospital_name'], h['lat'], h['lng']))
         
@@ -150,33 +183,18 @@ class Environment:
 
         df_calls['timeStamp'] = pd.to_datetime(df_calls['timeStamp'])
         for c in df_calls.to_dict(orient='records'):
-            self.calls.append(Call(c['id'], c['timeStamp'], c['lat'], c['lng'], c['priority']))
-        first_call_timestamp = min(self.calls, key=lambda x: x.timestamp).timestamp
-        self.first_day = datetime(first_call_timestamp.year, first_call_timestamp.month, first_call_timestamp.day)
-
+            id = c['id']
+            self.calls[id]= Call(c['id'], c['timeStamp'], c['lat'], c['lng'], c['priority'])
+            self.call_ids.append(id)
+        
         df_call_counts['date'] = pd.to_datetime(df_call_counts['date']).dt.date
         for cc in df_call_counts.to_dict(orient='records'):
             self.call_counts[(cc['station_id'], cc['priority'], cc['date'], cc['hour'])] = cc['call_count']
         
-        data = np.load("feature_norm_stats.npz")
-        self.mean_x = data['mu']
-        self.std_x = data['sigma']
-
+        if self.use_map:
+            util.load_graph()
         
-        if self.verbose:
-            print("data loaded")
-        
-    def normalize_state(self, state: State) -> State:
-        """
-        Normalize the state using the precomputed mean and standard deviation.
-        Args:
-            state (State): The state to normalize.
-        Returns:
-            State: The normalized state.
-        """
-        raw_state = np.array(state)
-        normalized_state = (raw_state - self.mean_x[None, :]) / (self.std_x[None, :] + 1e-8)
-        return normalized_state
+        print("environment variables loaded successfully")
      
     def next_event(self) -> TimedEvent:
         if not self.event_queue:
@@ -229,7 +247,9 @@ class Environment:
         
             # tt_i
             free_amb = self.ambulances[self.free_ambulance - 1]
-            tt_i = travel_time_from_dict(free_amb.location, self.stations[i].location)
+            start = free_amb.location
+            end = self.stations[i].location
+            tt_i = util.travel_time_by_road(start, end) if self.use_map else util.travel_time(start, end)
             x_i.append(tt_i.total_seconds() / 60 / 60)
         
             # tt_i_j
@@ -237,7 +257,9 @@ class Environment:
             for j in range(self.ambulance_count):
                 amb = self.ambulances[j]
                 if amb.destination_type == LocationType.HOSPITAL:
-                    tt = travel_time_from_dict(amb.destination, self.stations[i].location)
+                    start = amb.destination
+                    end = self.stations[i].location
+                    tt = util.travel_time_by_road(start, end) if self.use_map else util.travel_time(start, end)
                     time = (amb.time_of_arrival - self.time) + tt
                     tt_i_j.append(time.total_seconds() / 60 / 60)
             tt_i_j = sorted(tt_i_j)
@@ -249,11 +271,33 @@ class Environment:
             x_i.extend(tt_i_j)
             
             state.append(x_i)
-        
-        if self.normalize:
-            return self.normalize_state(state)
+                
+        return state
+    
+    def dispatch(self, call: Call):
+        amb, time = self.find_nearest_ambulance(call.location)
+        if amb is None:
+            if self.verbose:
+                print(f"{self.time_str()} - No ambulance available for call {call.id} with priority {call.priority} at {call.location}, call queued")
+            self.call_queue[call.priority].append(call)
         else:
-            return state
+            # wait_time = (self.time - call.timestamp).total_seconds() / 60
+            # hold_time = self.hold_time[call.priority]
+            # if wait_time < hold_time:
+            #     if self.verbose:
+            #         print(f"{self.time_str()} - Call {call.id} with priority {call.priority} is being held due to hold time")
+            #     self.add_event(TimedEvent(self.time + timedelta(minutes=hold_time), (call.id, PayloadType.CALL)))
+            # else:
+            if self.verbose:
+                print(f"{self.time_str()} - Ambulance {amb.id} assigned to call {call.id} with priority {call.priority} at {call.location}")
+            amb.at_station = False
+            amb.destination = call.location
+            amb.destination_type = LocationType.CALL
+            amb.time_of_dispatch = self.time
+            amb.time_of_arrival = self.time + util.add_noise(time, self.noise) if self.noise else self.time + time
+            amb.patient_id = call.id
+            
+            self.add_event(TimedEvent(amb.time_of_arrival, (amb.id, PayloadType.AMBULANCE)))
     
     def run_until_decision_needed(self):
         while True:
@@ -265,80 +309,89 @@ class Environment:
             id, type = event.payload
             self.time = event.timestamp
             if type == PayloadType.CALL:
-                call = self.calls[id - 1]
-                amb, time = self.find_nearest_ambulance(call.location)
-                if amb is None:
-                    self.reward -= 1 + call.priority/3
-                    self.stats.pickup_times.append((call.priority, 1000))
-                    if self.verbose:
-                        print(f"{self.time_str()} - No available ambulance for call {call.id}")
-                else:
-                    if self.verbose:
-                        print(f"{self.time_str()} - Ambulance {amb.id} assigned to call {call.id}")
-                    amb.at_station = False
-                    amb.destination = call.location
-                    amb.destination_type = LocationType.CALL
-                    amb.time_of_dispatch = self.time
-                    amb.time_of_arrival = self.time + time
-                    amb.patient_priority = call.priority
-                    self.add_event(TimedEvent(amb.time_of_arrival, (amb.id, PayloadType.AMBULANCE)))
+                call = self.calls[id]
+                self.dispatch(call)
             elif type == PayloadType.AMBULANCE:
                 ambulance = self.ambulances[id - 1]
                 if ambulance.destination_type == LocationType.CALL:
                     if self.verbose:
                         print(f"{self.time_str()} - Ambulance {ambulance.id} arrived to accident")
-                        
-                    pickup_time = (self.time - ambulance.time_of_dispatch)
-                    pr = ambulance.patient_priority
                     
-                    self.stats.pickup_times.append((pr, pickup_time.total_seconds() / 60))
+                    call = self.calls[ambulance.patient_id]
+                    pickup_time = (self.time - call.timestamp).total_seconds() / 60
+                    pr = call.priority
                     
-                    if pr == 0 and pickup_time <= timedelta(minutes=18) or \
-                       pr == 1 and pickup_time <= timedelta(minutes=15) or \
-                       pr == 2 and pickup_time <= timedelta(minutes=12):
-                        self.reward += 1 + pr
-                        self.reward_per_priority[pr] += 1
+                    self.stats.add(pr, pickup_time)
+                    
+                    if pickup_time <= threshold_for_pr(pr):
+                        self.reward -= pickup_time * (pr + 1)
                     else:
-                        self.reward -= 0.5 + pr/3
+                        self.reward -= pickup_time * (pr + 1)**2
                     hosp, time = self.find_nearest_hospital(ambulance.destination)
+                    
+                    if self.verbose:
+                        print(f"{self.time_str()} - Ambulance {ambulance.id} transporting patient to hospital {hosp.id} at {hosp.location}")
+                    
                     ambulance.location = ambulance.destination
                     ambulance.destination = hosp.location
-                    ambulance.time_of_arrival = self.time + time
+                    ambulance.time_of_arrival = self.time + util.add_noise(time, self.noise) if self.noise else self.time + time
                     ambulance.destination_type = LocationType.HOSPITAL
                     self.add_event(TimedEvent(ambulance.time_of_arrival, (ambulance.id, PayloadType.AMBULANCE)))
                 elif ambulance.destination_type == LocationType.HOSPITAL:
                     if self.verbose:
-                        print(f"{self.time_str()} - Ambulance {ambulance.id} arrived at hospital {ambulance.destination}")
+                        print(f"{self.time_str()} - Ambulance {ambulance.id} arrived at hospital")
                     ambulance.location = ambulance.destination
                     ambulance.destination = None
                     ambulance.destination_type = None
                     ambulance.time_of_arrival = None
-                    ambulance.patient_priority = 0
+                    ambulance.patient_id = None
                     self.free_ambulance = ambulance.id
                     return
                 elif ambulance.destination_type == LocationType.STATION:
                     if self.verbose:
-                        print(f"{self.time_str()} - Ambulance {ambulance.id} arrived at station {ambulance.destination}")
+                        print(f"{self.time_str()} - Ambulance {ambulance.id} arrived at station")
+
                     ambulance.at_station = True
                     ambulance.location = ambulance.destination
                     ambulance.destination = None
                     ambulance.destination_type = None
                     ambulance.time_of_arrival = None
+                    ambulance.patient_id = None                    
+
+                    for pr in reversed(range(3)):
+                        if self.call_queue[pr]:
+                            call = self.call_queue[pr].pop(0)
+                            self.dispatch(call)
+                            break
+                        
             self.next_event()
     
-    def reset(self, call_start=1) -> State:
+    def reset(self, call_start=1, ambulance_count=None, m=None, k=None, noise=None) -> State:
         """
         Reset the environment to its initial state.
         """
         if self.verbose:
             print("Resetting environment...")
+        if ambulance_count:
+            self.ambulance_count = ambulance_count
+        if m:
+            self.m = m
+        if k:
+            self.k = k
+        if noise:
+            self.noise = noise
         self.ambulances = []
         for i in range(self.ambulance_count):
             station = random.choice(list(self.stations))
             self.ambulances.append(Ambulance(i+1, station.location))
 
-        self.event_queue = [TimedEvent(call.timestamp, (call.id, PayloadType.CALL)) for call in self.calls if call_start <= call.id < call_start+self.call_size]
+        for i in range(call_start-1, call_start - 1 + self.call_size):
+            call = self.calls[self.call_ids[i]]
+            self.event_queue.append(TimedEvent(call.timestamp, (call.id, PayloadType.CALL)))
+            i += 1
         heapq.heapify(self.event_queue)
+        
+        self.call_queue = ([], [], [])
         
         self.stats = Stats()
         
@@ -361,11 +414,29 @@ class Environment:
         min_time = timedelta.max
         nearest_hospital = None
         for hospital in self.hospitals:
-            time = travel_time(location, hospital.location)
+            time = util.travel_time_by_road(location, hospital.location) if self.use_map else util.travel_time(location, hospital.location)
             if time < min_time:
                 min_time = time
                 nearest_hospital = hospital
         return nearest_hospital, min_time
+    
+    def find_nearest_station(self, location: Tuple[float, float]) -> Tuple[Station, timedelta]:
+        """
+        Find the nearest hospital to a given location.
+        Args:
+            location (Tuple[float, float]): The location (latitude, longitude).
+        Returns:
+            Hospital: The nearest hospital.
+            float: The travel time to the nearest hospital.
+        """
+        min_time = timedelta.max
+        nearest_station = None
+        for station in self.stations:
+            time = util.travel_time_by_road(location, station.location) if self.use_map else util.travel_time(location, station.location)
+            if time < min_time:
+                min_time = time
+                nearest_station = station
+        return nearest_station, min_time
       
     def find_nearest_ambulance(self, location: Tuple[float, float]) -> Tuple[Ambulance, timedelta]:
         """
@@ -381,7 +452,9 @@ class Environment:
         for amb in self.ambulances:
             if amb.at_station is False:
                 continue
-            time = travel_time(location, amb.location)
+            start =location
+            end = amb.location
+            time = util.travel_time_by_road(start, end) if self.use_map else util.travel_time(start, end)
             if time < min_time:
                 min_time = time
                 nearest_ambulance = amb
@@ -399,16 +472,17 @@ class Environment:
         station = self.stations[action]
         ambulance = self.ambulances[self.free_ambulance - 1]
         
+        if self.verbose:
+            print(f"{self.time_str()} - Ambulance {ambulance.id} dispatched to station {station.id} at {station.location}")
         
-        time = travel_time_from_dict(ambulance.location, station.location)
+        start = ambulance.location
+        end = station.location
+        time = util.travel_time_by_road(start, end) if self.use_map else util.travel_time(start, end, self.noise)
         ambulance.destination = station.location
         ambulance.destination_type = LocationType.STATION
         self.free_ambulance = None
         self.add_event(TimedEvent(self.time + time, (ambulance.id, PayloadType.AMBULANCE)))
-        if self.verbose:
-            print(f"{self.time_str()} - Ambulance {ambulance.id} dispatched to station {station.id}")
         
         self.reward = 0
-        self.reward_per_priority = [0, 0, 0]
         self.run_until_decision_needed()
         return self.get_state(), self.reward, len(self.event_queue) == 0
